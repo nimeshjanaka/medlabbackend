@@ -1,0 +1,11 @@
+node_modules
+dist
+.wrangler
+logs
+.env
+.env.*
+!.env.example
+*.log
+.git
+.gitignore
+README.md

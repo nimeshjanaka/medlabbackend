@@ -1,0 +1,50 @@
+# fly.toml — Fly.io app configuration for medlab-backend
+# Docs: https://fly.io/docs/reference/configuration/
+
+app = "medlab-backend"
+primary_region = "sin"          # Singapore — closest to Sri Lanka
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV     = "production"
+  PORT         = "8080"
+  JWT_EXPIRES_IN = "7d"
+  SMTP_HOST    = "smtp.gmail.com"
+  SMTP_PORT    = "587"
+  EMAIL_FROM   = "Family Care MedLab <noreply@familycare.com>"
+
+# Secrets (set via CLI — never put values here):
+#   fly secrets set MONGODB_URI="..."
+#   fly secrets set JWT_SECRET="..."
+#   fly secrets set SMTP_USER="..."
+#   fly secrets set SMTP_PASS="..."
+
+[[services]]
+  internal_port = 8080
+  protocol      = "tcp"
+
+  [[services.ports]]
+    port     = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port     = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type       = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  [[services.http_checks]]
+    interval     = 10000   # ms
+    timeout      = 5000
+    grace_period = "10s"
+    method       = "GET"
+    path         = "/health"
+
+[[vm]]
+  memory = "256mb"
+  cpus   = 1
