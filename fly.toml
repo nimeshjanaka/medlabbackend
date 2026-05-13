@@ -1,50 +1,55 @@
-# fly.toml — Fly.io app configuration for medlab-backend
-# Docs: https://fly.io/docs/reference/configuration/
+# fly.toml app configuration file generated for medlab-backend on 2026-05-12T18:20:42+05:30
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "medlab-backend"
-primary_region = "sin"          # Singapore — closest to Sri Lanka
+app = 'medlab-backend'
+primary_region = 'sin'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  NODE_ENV     = "production"
-  PORT         = "8080"
-  JWT_EXPIRES_IN = "7d"
-  SMTP_HOST    = "smtp.gmail.com"
-  SMTP_PORT    = "587"
-  EMAIL_FROM   = "Family Care MedLab <noreply@familycare.com>"
+  EMAIL_FROM = 'Family Care MedLab <noreply@familycare.com>'
+  JWT_EXPIRES_IN = '7d'
+  NODE_ENV = 'production'
+  PORT = '8080'
+  SMTP_HOST = 'smtp.gmail.com'
+  SMTP_PORT = '587'
 
-# Secrets (set via CLI — never put values here):
-#   fly secrets set MONGODB_URI="..."
-#   fly secrets set JWT_SECRET="..."
-#   fly secrets set SMTP_USER="..."
-#   fly secrets set SMTP_PASS="..."
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
 
 [[services]]
+  protocol = 'tcp'
   internal_port = 8080
-  protocol      = "tcp"
 
   [[services.ports]]
-    port     = 80
-    handlers = ["http"]
+    port = 80
+    handlers = ['http']
 
   [[services.ports]]
-    port     = 443
-    handlers = ["tls", "http"]
+    port = 443
+    handlers = ['tls', 'http']
 
   [services.concurrency]
-    type       = "connections"
+    type = 'connections'
     hard_limit = 25
     soft_limit = 20
 
   [[services.http_checks]]
-    interval     = 10000   # ms
-    timeout      = 5000
-    grace_period = "10s"
-    method       = "GET"
-    path         = "/health"
+    interval = '10s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
 
 [[vm]]
-  memory = "256mb"
-  cpus   = 1
+  memory = '256mb'
+  cpus = 1
+  memory_mb = 256

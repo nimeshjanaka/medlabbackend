@@ -21,6 +21,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Create logs directory (winston writes here)
 RUN mkdir -p logs && chown appuser:appgroup logs
+RUN mkdir -p uploads && chown appuser:appgroup uploads
 
 COPY package*.json ./
 RUN npm ci --omit=dev

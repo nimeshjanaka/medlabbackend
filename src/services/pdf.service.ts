@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { logger } from "../utils/logger";
 
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+const UPLOADS_DIR = path.join("/tmp", "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const C = {
@@ -240,13 +240,10 @@ interface PatientData { fullName: string; nic?: string; dob?: Date | string; gen
 interface SessionData { _id: string; refNo?: string; doctorName?: string; notes?: string; sampleType?: string; status?: string; tests: SessionTestData[]; totalPrice: number; createdAt: Date | string; patient?: PatientData; }
 
 export const pdfService = {
-  async generateSessionReport(patient: PatientData, session: SessionData): Promise<string> {
+  async generateSessionReport(patient: PatientData, session: SessionData, outputStream: NodeJS.WritableStream): Promise<void> {
     return new Promise((resolve, reject) => {
-      const filename = `session_${session._id}_${Date.now()}.pdf`;
-      const filepath = path.join(UPLOADS_DIR, filename);
       const doc = new PDFDocument({ margin: 0, size: "A4", info: { Title: "Medical Laboratory Report" } });
-      const stream = fs.createWriteStream(filepath);
-      doc.pipe(stream);
+      doc.pipe(outputStream);
 
       const PAGE_W = 595.28, PAGE_H = 841.89;
       const ML = 50, MR = 50, CW = PAGE_W - ML - MR;
@@ -325,8 +322,8 @@ export const pdfService = {
       // ── Footer: intentionally blank — already printed on your letterhead ───
 
       doc.end();
-      stream.on("finish", () => { logger.info(`📄 PDF: ${filename}`); resolve(`/uploads/${filename}`); });
-      stream.on("error", reject);
+      outputStream.on("finish", () => { logger.info("📄 PDF generated"); resolve(); });
+      outputStream.on("error", reject);
     });
   },
 
