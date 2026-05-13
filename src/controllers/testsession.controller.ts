@@ -158,8 +158,15 @@ export const testSessionController = {
         fullName: string; nic?: string; dob?: Date; gender?: string; phone?: string; address?: string;
       };
 
-      const relativePdfUrl = await pdfService.generateSessionReport(patient, {
-        _id:        sessionObj._id.toString(),
+      const sessionId = sessionObj._id.toString();
+      const filename  = `report_${sessionId}.pdf`;
+
+      // Stream the PDF directly to the HTTP response — no disk storage needed
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+
+      await pdfService.generateSessionReport(patient, {
+        _id:        sessionId,
         doctorName: sessionObj.doctorName,
         notes:      sessionObj.notes,
         sampleType: sessionObj.sampleType,
@@ -167,16 +174,11 @@ export const testSessionController = {
         tests:      sessionObj.tests as never,
         totalPrice: sessionObj.totalPrice,
         createdAt:  sessionObj.createdAt,
-      });
+      }, res);
 
-      // Build absolute URL so the browser can open it directly
-      const proto    = req.headers["x-forwarded-proto"] ?? req.protocol ?? "http";
-      const host     = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:5000";
-      const pdfUrl   = `${proto}://${host}${relativePdfUrl}`;
-
-      sendSuccess(res, { pdfUrl, relativePdfUrl }, "PDF generated");
     } catch (err) {
-      sendError(res, (err as Error).message, 400);
+      // Only send error if headers not yet sent
+      if (!res.headersSent) sendError(res, (err as Error).message, 400);
     }
   },
 
