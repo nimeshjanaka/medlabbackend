@@ -174,12 +174,10 @@ function getConfig(testName: string): TestConfig | null {
 
 function parseSubResults(result: string | undefined, cfg?: TestConfig): Record<string, number | string> {
   if (!result) return {};
-  // Always try JSON first — all modern saves use JSON {"KEY": value}
   try {
     const parsed = JSON.parse(result);
     if (typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
   } catch {}
-  // Pipe-separated KEY:VALUE (legacy)
   const out: Record<string, number | string> = {};
   for (const part of result.split("|")) {
     const idx = part.indexOf(":");
@@ -189,7 +187,6 @@ function parseSubResults(result: string | undefined, cfg?: TestConfig): Record<s
     if (k) { const n = parseFloat(v); out[k] = isNaN(n) ? v : n; }
   }
   if (Object.keys(out).length > 0) return out;
-  // Plain value (legacy single-field — map to first subTest key)
   if (cfg && cfg.subTests.length === 1) {
     const n = parseFloat(result.trim());
     out[cfg.subTests[0].key] = isNaN(n) ? result.trim() : n;
@@ -243,36 +240,29 @@ export const pdfService = {
   async generateSessionReport(patient: PatientData, session: SessionData, outputStream: NodeJS.WritableStream): Promise<void> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 0, size: "A4", info: { Title: "Medical Laboratory Report" } });
+
+      // ✅ Attach listeners BEFORE doc.end() to avoid race condition
+      doc.on("end", () => { logger.info("📄 PDF generated and streamed"); resolve(); });
+      doc.on("error", reject);
+
       doc.pipe(outputStream);
 
       const PAGE_W = 595.28, PAGE_H = 841.89;
       const ML = 50, MR = 50, CW = PAGE_W - ML - MR;
 
-      // ── Blank space for pre-printed letterhead (top) ───────────────────────
-      // HEADER_H = how many points to leave blank at the top for your letterhead.
-      // 200pt ≈ 70mm. Measure your printed paper and adjust this one number.
       const HEADER_H = 200;
-
-      // ── Blank space for pre-printed footer (bottom) ────────────────────────
-      // Your letterhead already has the ECG line, tagline & signature printed.
-      // We just need a bottom margin so content doesn't overlap them.
-      // 110pt ≈ 39mm from bottom.
       const FOOTER_H = 110;
-
       const CONTENT_BOT = PAGE_H - FOOTER_H;
 
-      // ── Patient info — sits right below the letterhead area ────────────────
       const refNo = `FC-${session._id.toString().slice(-6).toUpperCase()}`;
-      // Left block: Name, Ref No, Ref By Dr
-      // Right block: Gender, Age, Date  — pushed to right half, no box
-      const LBL_X  = ML;          // left label x
-      const LBL_W  = 72;          // label column width
-      const VAL_X  = ML + 75;     // left value x
-      const VAL_W  = 195;         // left value width
-      const R_LBL_X = 360;        // right label x  (further right)
-      const R_LBL_W = 55;         // right label width
-      const R_VAL_X = 418;        // right value x
-      const R_VAL_W = PAGE_W - MR - 418; // right value width — never overflows
+      const LBL_X  = ML;
+      const LBL_W  = 72;
+      const VAL_X  = ML + 75;
+      const VAL_W  = 195;
+      const R_LBL_X = 360;
+      const R_LBL_W = 55;
+      const R_VAL_X = 418;
+      const R_VAL_W = PAGE_W - MR - 418;
 
       let iy = HEADER_H;
       const rows: [string, string, string, string][] = [
@@ -282,23 +272,18 @@ export const pdfService = {
       ];
       for (const [l1, v1, l2, v2] of rows) {
         doc.save();
-        // Left label
         doc.fontSize(9).font("Helvetica").fillColor(C.black)
           .text(l1, LBL_X, iy, { width: LBL_W, lineBreak: false });
-        // Left colon + value — regular weight, no bold
         doc.fontSize(9).font("Helvetica").fillColor(C.black)
           .text(`: ${v1}`, VAL_X, iy, { width: VAL_W, lineBreak: false });
-        // Right label
         doc.fontSize(9).font("Helvetica").fillColor(C.black)
           .text(l2, R_LBL_X, iy, { width: R_LBL_W, lineBreak: false });
-        // Right value — regular weight, strictly within right margin
         doc.fontSize(9).font("Helvetica").fillColor(C.black)
           .text(`: ${v2}`, R_VAL_X, iy, { width: R_VAL_W, lineBreak: false });
         doc.restore();
         iy += 15;
       }
 
-      // Thin separator line between patient info and test results
       let y = iy + 8;
       doc.save();
       doc.moveTo(ML, y).lineTo(PAGE_W - MR, y)
@@ -306,7 +291,6 @@ export const pdfService = {
       doc.restore();
       y += 12;
 
-      // ── Tests ──────────────────────────────────────────────────────────────
       for (const test of session.tests) {
         const cfg = getConfig(test.testName);
         if (cfg) {
@@ -317,13 +301,7 @@ export const pdfService = {
         y += 14;
       }
 
-      // ── Total price omitted from patient report (shown in admin portal only) ──
-
-      // ── Footer: intentionally blank — already printed on your letterhead ───
-
       doc.end();
-      outputStream.on("finish", () => { logger.info("📄 PDF generated"); resolve(); });
-      outputStream.on("error", reject);
     });
   },
 
@@ -361,9 +339,9 @@ export const pdfService = {
       drawLine(doc, doc.y, 50, 545, C.navy, 0.7);
       doc.fontSize(11).font("Helvetica-Bold").fillColor(C.navy)
         .text(`Grand Total: Rs. ${gt.toFixed(2)}`, { align: "right" });
-      doc.end();
       stream.on("finish", () => resolve(`/uploads/${filename}`));
       stream.on("error", reject);
+      doc.end();
     });
   },
 };
@@ -374,7 +352,6 @@ function drawStructuredTest(
 ): number {
   let y = startY;
 
-  // ── Parse & auto-calculate ─────────────────────────────────────────────────
   const storedVals = parseSubResults(test.result, cfg);
   const numVals: Record<string, number> = {};
   for (const [k, v] of Object.entries(storedVals)) {
@@ -387,19 +364,15 @@ function drawStructuredTest(
     }
   }
 
-  // ── Layout constants ───────────────────────────────────────────────────────
   const TITLE_H   = 20;
   const HDR_H     = 17;
   const ROW_H     = 18;
 
-  // Column x positions and widths  (TEST | RESULT | UNITS | REF. RANGE)
-  // Columns must sum within CW=495: TEST|RESULT|UNITS|REF.RANGE
-  const cT   = ML + 4;    const wT   = 240;  // 244
-  const cR   = ML + 252;  const wR   = 80;   // 332→382
-  const cU   = ML + 338;  const wU   = 42;   // 388→430
-  const cRng = ML + 386;  const wRng = CW - 386 - 4; // fills to right edge exactly
+  const cT   = ML + 4;    const wT   = 240;
+  const cR   = ML + 252;  const wR   = 80;
+  const cU   = ML + 338;  const wU   = 42;
+  const cRng = ML + 386;  const wRng = CW - 386 - 4;
 
-  // helper: draw a hairline separator — always grey, no color bleed
   const hairline = (atY: number) => {
     doc.save();
     doc.moveTo(ML, atY).lineTo(ML + CW, atY);
@@ -407,7 +380,6 @@ function drawStructuredTest(
     doc.restore();
   };
 
-  // ── Section title bar ──────────────────────────────────────────────────────
   if (y + TITLE_H > contentBot) { doc.addPage(); y = headerH; }
   doc.rect(ML, y, CW, TITLE_H).fillColor(C.navy).fill();
   doc.save();
@@ -416,7 +388,6 @@ function drawStructuredTest(
   doc.restore();
   y += TITLE_H;
 
-  // ── Column header row ──────────────────────────────────────────────────────
   if (y + HDR_H > contentBot) { doc.addPage(); y = headerH; }
   doc.rect(ML, y, CW, HDR_H).fillColor(C.lightBlue).fill();
   doc.save();
@@ -428,7 +399,6 @@ function drawStructuredTest(
   doc.restore();
   y += HDR_H;
 
-  // ── Data rows ──────────────────────────────────────────────────────────────
   for (let i = 0; i < cfg.subTests.length; i++) {
     const sub = cfg.subTests[i];
     if (y + ROW_H > contentBot) { doc.addPage(); y = headerH; }
@@ -437,10 +407,8 @@ function drawStructuredTest(
     const disp = (raw != null && String(raw).trim() !== "") ? String(raw) : "—";
     const flag = flagResult(raw, sub);
 
-    // Alternating stripe
     if (i % 2 === 1) { doc.rect(ML, y, CW, ROW_H).fillColor("#F4F7FC").fill(); }
 
-    // Flag colour: HDL high = good (no flag); HDL low = orange L
     let valColor = C.black;
     let badge    = "";
     if (sub.key === "HDL_CHOLESTEROL") {
@@ -466,24 +434,20 @@ function drawStructuredTest(
     y += ROW_H;
   }
 
-  // ── Risk reference table ───────────────────────────────────────────────────
   if (cfg.riskTable && cfg.riskTable.length) {
-    y += 18;   // breathing gap between result table and risk table
+    y += 18;
 
-    // Risk table columns — all widths sum to CW exactly, no overflow
-    // CW = 495.28  (595.28 - 50 - 50)
     const RISK_HDR_H  = 30;
     const RISK_ROW_H  = 17;
-    const rcL  = ML;             const rwL  = 150;   // label col
-    const rcD  = ML + 154;       const rwD  = 112;   // desirable
-    const rcB  = ML + 270;       const rwB  = 112;   // borderline
-    const rcH  = ML + 386;       const rwH  = CW - 386; // high — fills exactly to right edge
+    const rcL  = ML;             const rwL  = 150;
+    const rcD  = ML + 154;       const rwD  = 112;
+    const rcB  = ML + 270;       const rwB  = 112;
+    const rcH  = ML + 386;       const rwH  = CW - 386;
 
     if (y + RISK_HDR_H + cfg.riskTable.length * RISK_ROW_H > contentBot) {
       doc.addPage(); y = headerH;
     }
 
-    // Risk header background
     doc.rect(ML, y, CW, RISK_HDR_H).fillColor(C.lightBlue).fill();
     doc.save();
     doc.fontSize(7).font("Helvetica").fillColor(C.navy);
@@ -497,7 +461,6 @@ function drawStructuredTest(
     doc.restore();
     y += RISK_HDR_H;
 
-    // Risk data rows
     for (let i = 0; i < cfg.riskTable.length; i++) {
       const row = cfg.riskTable[i];
       if (y + RISK_ROW_H > contentBot) { doc.addPage(); y = headerH; }
@@ -513,13 +476,12 @@ function drawStructuredTest(
         .text(row.borderline, rcB, ry, { width: rwB,  align: "center", lineBreak: false });
       doc.fontSize(7.5).font("Helvetica").fillColor(C.red)
         .text(row.high,       rcH, ry, { width: rwH,  align: "center", lineBreak: false });
-      doc.restore();   // ← restore BEFORE drawing line — prevents color bleed
+      doc.restore();
 
       hairline(y + RISK_ROW_H);
       y += RISK_ROW_H;
     }
 
-    // ── Premature CHD footnote ───────────────────────────────────────────────
     if (cfg.prematureCHD) {
       y += 10;
       if (y + 10 + 2 * RISK_ROW_H > contentBot) { doc.addPage(); y = headerH; }
@@ -560,7 +522,6 @@ function drawStructuredTest(
     }
   }
 
-  // ── Remarks ────────────────────────────────────────────────────────────────
   if (test.remarks) {
     y += 8;
     doc.save();
@@ -595,7 +556,6 @@ function drawGenericTest(
     doc.restore();
   };
 
-  // Title bar
   doc.rect(ML, y, CW, TITLE_H).fillColor(C.navy).fill();
   doc.save();
   doc.fontSize(9).font("Helvetica-Bold").fillColor(C.white)
@@ -603,7 +563,6 @@ function drawGenericTest(
   doc.restore();
   y += TITLE_H;
 
-  // Column headers
   doc.rect(ML, y, CW, HDR_H).fillColor(C.lightBlue).fill();
   doc.save();
   doc.fontSize(7.5).font("Helvetica-Bold").fillColor(C.navy);
@@ -614,8 +573,6 @@ function drawGenericTest(
   doc.restore();
   y += HDR_H;
 
-  // Data row
-  // Parse result in case it is JSON (single-key schema stored as JSON)
   let displayResult = test.result ?? "—";
   let displayUnit   = test.unit   ?? "";
   let displayRange  = test.normalRange ?? "";
